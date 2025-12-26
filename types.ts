@@ -3,6 +3,10 @@ export interface CapturedImage {
   id: string;
   url: string;
   timestamp: number;
+  location?: {
+    lat: number;
+    lng: number;
+  };
 }
 
 export enum CameraMode {
@@ -11,7 +15,9 @@ export enum CameraMode {
   SQUARE = 'SQUARE',
   PORTRAIT = 'PORTRAIT',
   NIGHT = 'NIGHT',
-  VISION = 'VISION'
+  VISION = 'VISION',
+  TIMELAPSE = 'TIMELAPSE',
+  SLOW_MOTION = 'SLOW_MOTION'
 }
 
 export type AspectRatio = '4:3' | '16:9' | '1:1';

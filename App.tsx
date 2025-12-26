@@ -4,11 +4,12 @@ import CameraEngine from './components/CameraEngine';
 import Overlay from './components/Overlay';
 import TopBar from './components/TopBar';
 import ModeSelector from './components/ModeSelector';
-import ZoomControls from './components/ZoomControls';
+import ZoomDial from './components/ZoomDial';
 import SettingsTray from './components/SettingsTray';
 import BottomBar from './components/BottomBar';
 import GalleryOverlay from './components/GalleryOverlay';
 import HorizonLevel from './components/HorizonLevel';
+import ToastContainer from './components/ToastContainer';
 import { useCameraStore } from './store';
 import { CameraMode } from './types';
 import { GoogleGenAI } from "@google/genai";
@@ -17,6 +18,37 @@ const App: React.FC = () => {
   const store = useCameraStore();
   const cameraRef = useRef<any>(null);
   const videoIntervalRef = useRef<any>(null);
+  const burstIntervalRef = useRef<any>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  // Theo dõi vị trí
+  useEffect(() => {
+    if (store.locationEnabled && navigator.geolocation) {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          store.setCurrentCoords({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error("Location error:", error);
+          store.addToast("Không thể lấy vị trí", "error");
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      store.setCurrentCoords(null);
+    }
+
+    return () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, [store.locationEnabled]);
 
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
@@ -27,83 +59,88 @@ const App: React.FC = () => {
   const performVisionAnalysis = async (base64Image: string) => {
     store.setIsAnalyzing(true);
     store.setVisionResult(null);
-    
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const pureBase64 = base64Image.split(',')[1];
-      
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
           parts: [
-            { 
-              text: `Bạn là trợ lý camera thông minh. Phân tích ảnh này và trả về kết quả ngắn gọn theo các mục:
-              1. QR Code: (Link hoặc thông tin nếu có)
-              2. Văn bản: (Trích xuất text quan trọng)
-              3. Khuôn mặt: (Số lượng, biểu cảm)
-              4. Vật thể: (Tên vật thể chính)
-              Trả lời bằng tiếng Việt, súc tích trong 3-4 dòng.` 
-            },
+            { text: `Bạn là trợ lý camera AI. Phân tích ảnh và trả về JSON súc tích: { "qr": "...", "text": "...", "faces": "...", "objects": "..." }. Trả lời bằng tiếng Việt.` },
             { inlineData: { mimeType: 'image/jpeg', data: pureBase64 } }
           ]
         },
-        config: {
-          temperature: 0.4,
-          thinkingConfig: { thinkingBudget: 0 }
-        }
+        config: { responseMimeType: "application/json" }
       });
-
-      const text = response.text || "Không tìm thấy thông tin cụ thể.";
-      store.setVisionResult({ raw: text });
-      
-      // Haptic feedback khi có kết quả
-      if (window.navigator.vibrate) window.navigator.vibrate([30, 50, 30]);
-      
+      const resJson = JSON.parse(response.text || "{}");
+      store.setVisionResult({ raw: Object.values(resJson).filter(v => v && v !== '...').join('\n') || "Không tìm thấy thông tin." });
+      store.addToast("Phân tích hoàn tất", "info");
     } catch (error) {
-      console.error("Vision Analysis Error:", error);
-      store.setVisionResult({ raw: "Lỗi kết nối AI. Vui lòng kiểm tra lại mạng." });
+      store.setVisionResult({ raw: "Lỗi AI." });
     } finally {
       store.setIsAnalyzing(false);
     }
   };
 
-  const performCapture = async () => {
-    store.setIsCapturing(true);
-    if (window.navigator.vibrate) window.navigator.vibrate(15);
-
-    const isNight = store.mode === CameraMode.NIGHT;
-    const imageUrl = await cameraRef.current?.capture(store.hdr, isNight, store.filter);
-    
+  const performCapture = async (silent = false) => {
+    if (!silent) store.setIsCapturing(true);
+    const imageUrl = await cameraRef.current?.capture();
     if (imageUrl) {
-      if (store.mode === CameraMode.VISION) {
-        performVisionAnalysis(imageUrl);
-      } else {
-        store.addImage({
-          id: Date.now().toString(),
-          url: imageUrl,
-          timestamp: Date.now(),
-        });
-      }
+      const imageObj = { 
+        id: Date.now().toString(), 
+        url: imageUrl, 
+        timestamp: Date.now(),
+        location: store.locationEnabled && store.currentCoords ? { ...store.currentCoords } : undefined
+      };
+
+      if (store.mode === CameraMode.VISION) performVisionAnalysis(imageUrl);
+      else store.addImage(imageObj);
+      
+      if (silent) store.addToast("Đã lưu ảnh");
     }
-    
-    setTimeout(() => store.setIsCapturing(false), 200);
+    if (!silent) setTimeout(() => store.setIsCapturing(false), 150);
+  };
+
+  const handleBurstStart = () => {
+    if (store.mode !== CameraMode.PHOTO || store.isCapturing) return;
+    store.setIsBursting(true);
+    burstIntervalRef.current = setInterval(() => {
+      performCapture(true);
+      store.setBurstCount(prev => prev + 1);
+    }, 150);
+  };
+
+  const handleBurstEnd = () => {
+    if (store.isBursting) {
+      clearInterval(burstIntervalRef.current);
+      store.setIsBursting(false);
+      store.addToast(`Đã lưu ${store.burstCount} ảnh burst`);
+    }
   };
 
   const handleCaptureClick = useCallback(async () => {
     if (store.isCapturing || store.countdown !== null || store.isAnalyzing) return;
 
-    if (store.mode === CameraMode.VIDEO) {
+    const isVideoMode = [CameraMode.VIDEO, CameraMode.SLOW_MOTION, CameraMode.TIMELAPSE].includes(store.mode);
+
+    if (isVideoMode) {
       if (store.isRecording) {
         store.setIsRecording(false);
         clearInterval(videoIntervalRef.current);
         const videoUrl = await cameraRef.current?.stopVideo();
         if (videoUrl) {
-          store.addImage({ id: Date.now().toString(), url: videoUrl, timestamp: Date.now() });
+          store.addImage({ 
+            id: Date.now().toString(), 
+            url: videoUrl, 
+            timestamp: Date.now(),
+            location: store.locationEnabled && store.currentCoords ? { ...store.currentCoords } : undefined
+          });
+          store.addToast("Video đã được lưu");
         }
         store.resetVideoSeconds();
       } else {
         store.setIsRecording(true);
-        cameraRef.current?.startVideo();
+        cameraRef.current?.startVideo(store.mode);
         videoIntervalRef.current = setInterval(() => store.incrementVideoSeconds(), 1000);
       }
       return;
@@ -117,23 +154,29 @@ const App: React.FC = () => {
           clearInterval(interval);
           performCapture();
           store.setCountdown(null);
-        } else if (currentCountdown !== null) {
-          store.setCountdown(currentCountdown - 1);
-        }
+        } else if (currentCountdown !== null) store.setCountdown(currentCountdown - 1);
       }, 1000);
     } else {
       performCapture();
     }
-  }, [store.isCapturing, store.isRecording, store.mode, store.timer, store.countdown, store.hdr, store.filter, store.isAnalyzing]);
+  }, [store.isCapturing, store.isRecording, store.mode, store.timer, store.countdown, store.hdr, store.filter, store.isAnalyzing, store.locationEnabled, store.currentCoords]);
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden select-none">
+    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden select-none touch-none">
       <TopBar />
+      <ToastContainer />
 
       {store.isRecording && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[60] bg-red-600 px-4 py-1.5 rounded-full flex items-center gap-2 animate-pulse shadow-lg border border-white/20">
+        <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-1.5 rounded-full flex items-center gap-2 animate-pulse shadow-lg border border-white/20 backdrop-blur-md ${store.mode === CameraMode.TIMELAPSE ? 'bg-orange-500/80' : 'bg-red-600/80'}`}>
           <div className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
           <span className="text-xs font-mono font-bold tracking-widest">{formatTime(store.videoSeconds)}</span>
+        </div>
+      )}
+
+      {store.isBursting && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[60] bg-white/10 backdrop-blur-md px-6 py-2 rounded-full border border-white/20 scale-110">
+          <span className="text-lg font-black font-mono tracking-tighter text-yellow-400">{store.burstCount}</span>
+          <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-white/60">Burst</span>
         </div>
       )}
 
@@ -146,24 +189,21 @@ const App: React.FC = () => {
           zoom={store.zoom} 
           exposure={store.exposure}
           torch={store.torch}
+          filter={store.filter}
           onZoomChange={store.setZoom}
           aspectRatio={store.aspectRatio}
         />
+
+        <div className="absolute top-4 right-4 z-40 bg-black/40 backdrop-blur-md p-2 rounded-lg border border-white/5 text-[8px] font-mono text-white/40 pointer-events-none">
+          {store.mode === CameraMode.SLOW_MOTION ? '120 FPS' : store.mode === CameraMode.TIMELAPSE ? '5 FPS' : '30 FPS'}<br/>
+          {store.aspectRatio} | {store.filter !== 'None' ? store.filter.toUpperCase() : 'NO FILTER'}
+          {store.locationEnabled && store.currentCoords && <div className="text-yellow-400 mt-1 uppercase">📍 GPS Active</div>}
+        </div>
         
         {store.isCapturing && store.mode === CameraMode.NIGHT && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
             <div className="w-16 h-16 border-4 border-white/10 border-t-yellow-400 rounded-full animate-spin mb-6" />
             <span className="text-[10px] font-black tracking-[0.3em] uppercase text-yellow-400">Giữ yên máy...</span>
-          </div>
-        )}
-
-        {store.isAnalyzing && (
-          <div className="absolute inset-0 z-[70] flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm">
-             <div className="relative w-20 h-20 mb-6">
-                <div className="absolute inset-0 border-4 border-yellow-400/20 rounded-full" />
-                <div className="absolute inset-0 border-t-4 border-yellow-400 rounded-full animate-spin" />
-             </div>
-             <span className="text-[10px] font-black tracking-[0.4em] uppercase text-white animate-pulse">Đang nhận diện...</span>
           </div>
         )}
 
@@ -176,48 +216,34 @@ const App: React.FC = () => {
         />
 
         {store.showGrid && <HorizonLevel />}
-        <ZoomControls currentZoom={store.zoom} setZoom={store.setZoom} />
+        <ZoomDial currentZoom={store.zoom} setZoom={store.setZoom} />
       </div>
 
-      {/* Dynamic Insight Card */}
       {store.visionResult && (
-        <div className="absolute bottom-64 left-4 right-4 z-[80] animate-in slide-in-from-bottom-10 duration-500">
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-yellow-400 to-transparent opacity-50" />
-            
+        <div className="absolute bottom-72 left-4 right-4 z-[80] animate-in slide-in-from-bottom-10 duration-500">
+          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
             <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                <span className="text-[10px] font-black tracking-widest uppercase text-yellow-400/80">Gemini Vision AI</span>
-              </div>
-              <button 
-                onClick={() => store.setVisionResult(null)}
-                className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full active:scale-90 transition-transform"
-              >
-                <svg className="w-4 h-4 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <span className="text-[10px] font-black tracking-widest uppercase text-yellow-400">Gemini Pro Vision</span>
+              <button onClick={() => store.setVisionResult(null)} className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            
-            <div className="text-[13px] leading-relaxed text-white/90 font-medium whitespace-pre-line">
-              {store.visionResult.raw}
-            </div>
-            
-            <button className="mt-5 w-full py-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-colors">
-              Sao chép kết quả
-            </button>
+            <div className="text-[13px] leading-relaxed text-white font-medium whitespace-pre-line">{store.visionResult.raw}</div>
           </div>
         </div>
       )}
 
-      <div className="h-64 bg-black flex flex-col justify-end pb-12 z-50">
+      <div className={`h-72 bg-black flex flex-col justify-end pb-12 z-50 transition-opacity duration-300 ${store.isRecording ? 'opacity-80' : 'opacity-100'}`}>
         <ModeSelector currentMode={store.mode} setMode={store.setMode} />
         <BottomBar 
           mode={store.mode}
-          isCapturing={store.isRecording || store.isCapturing || store.isAnalyzing}
+          isCapturing={store.isCapturing || store.isAnalyzing || store.isBursting}
+          isRecording={store.isRecording}
           lastImage={store.images[0]}
           onGalleryClick={() => store.setShowGallery(true)}
           onShutterClick={handleCaptureClick}
+          onBurstStart={handleBurstStart}
+          onBurstEnd={handleBurstEnd}
           onFlipClick={store.toggleFacingMode}
+          onVideoSnap={() => performCapture(true)}
         />
       </div>
 

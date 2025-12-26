@@ -20,7 +20,6 @@ const Overlay: React.FC<Props> = ({ isCapturing, mode, showGrid, exposure, onExp
         return;
     }
     
-    // Giả lập nhận diện khuôn mặt liên tục để tăng tính trải nghiệm "Pro"
     const interval = setInterval(() => {
         if (Math.random() > 0.8) {
             setFaces([{ 
@@ -36,8 +35,11 @@ const Overlay: React.FC<Props> = ({ isCapturing, mode, showGrid, exposure, onExp
   }, [mode]);
 
   const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    // Không focus nếu chạm vào vùng điều khiển dưới cùng
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    if (clientY > window.innerHeight - 280) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     setFocusPos({ x: clientX, y: clientY });
     setFaces([]); 
     setTimeout(() => setFocusPos(null), 3000);
@@ -58,24 +60,18 @@ const Overlay: React.FC<Props> = ({ isCapturing, mode, showGrid, exposure, onExp
               <div className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-yellow-400" />
               <div className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-yellow-400" />
               <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-yellow-400" />
-              <div className="absolute -top-6 left-0 text-[8px] font-bold text-yellow-400 uppercase tracking-tighter bg-black/20 px-1">Face Detected</div>
           </div>
       ))}
 
       {/* Vision Scanning UI */}
       {mode === CameraMode.VISION && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-           <div className="relative w-80 h-80 border border-white/5 rounded-[3rem] overflow-hidden">
-              {/* Scan Line */}
+           <div className="relative w-72 h-72 border border-white/5 rounded-[3rem] overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-yellow-400/20 to-transparent w-full h-[2px] bg-yellow-400 animate-[scan_4s_ease-in-out_infinite]" />
-              
-              {/* Corners */}
               <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-yellow-400 rounded-tl-[2rem]" />
               <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-yellow-400 rounded-tr-[2rem]" />
               <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-yellow-400 rounded-bl-[2rem]" />
               <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-yellow-400 rounded-br-[2rem]" />
-              
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Scanner Active</div>
            </div>
         </div>
       )}

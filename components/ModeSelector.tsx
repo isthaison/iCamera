@@ -9,12 +9,14 @@ interface Props {
 
 const ModeSelector: React.FC<Props> = ({ currentMode, setMode }) => {
   const modes = [
-    { label: 'VISION', value: CameraMode.VISION },
-    { label: 'SQUARE', value: CameraMode.SQUARE },
-    { label: 'PORTRAIT', value: CameraMode.PORTRAIT },
-    { label: 'PHOTO', value: CameraMode.PHOTO },
+    { label: 'TIME-LAPSE', value: CameraMode.TIMELAPSE },
+    { label: 'SLO-MO', value: CameraMode.SLOW_MOTION },
     { label: 'VIDEO', value: CameraMode.VIDEO },
+    { label: 'PHOTO', value: CameraMode.PHOTO },
+    { label: 'PORTRAIT', value: CameraMode.PORTRAIT },
+    { label: 'SQUARE', value: CameraMode.SQUARE },
     { label: 'NIGHT', value: CameraMode.NIGHT },
+    { label: 'VISION', value: CameraMode.VISION },
   ];
 
   return (

@@ -10,6 +10,12 @@ interface VisionResult {
   raw?: string;
 }
 
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
 interface CameraState {
   images: CapturedImage[];
   mode: CameraMode;
@@ -18,6 +24,8 @@ interface CameraState {
   isCapturing: boolean;
   isRecording: boolean;
   isAnalyzing: boolean;
+  isBursting: boolean;
+  burstCount: number;
   visionResult: VisionResult | null;
   videoSeconds: number;
   facingMode: 'user' | 'environment';
@@ -30,6 +38,11 @@ interface CameraState {
   filter: CameraFilter;
   showGrid: boolean;
   isSettingsOpen: boolean;
+  toasts: Toast[];
+  
+  // Location features
+  locationEnabled: boolean;
+  currentCoords: { lat: number; lng: number } | null;
 
   // Actions
   setMode: (mode: CameraMode) => void;
@@ -38,6 +51,8 @@ interface CameraState {
   setIsCapturing: (val: boolean) => void;
   setIsRecording: (val: boolean) => void;
   setIsAnalyzing: (val: boolean) => void;
+  setIsBursting: (val: boolean) => void;
+  setBurstCount: (val: number | ((prev: number) => number)) => void;
   setVisionResult: (res: VisionResult | null) => void;
   incrementVideoSeconds: () => void;
   resetVideoSeconds: () => void;
@@ -53,6 +68,10 @@ interface CameraState {
   setIsSettingsOpen: (val: boolean) => void;
   addImage: (img: CapturedImage) => void;
   deleteImage: (id: string) => void;
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  removeToast: (id: string) => void;
+  setLocationEnabled: (val: boolean) => void;
+  setCurrentCoords: (coords: { lat: number; lng: number } | null) => void;
 }
 
 export const useCameraStore = create<CameraState>((set) => ({
@@ -63,25 +82,32 @@ export const useCameraStore = create<CameraState>((set) => ({
   isCapturing: false,
   isRecording: false,
   isAnalyzing: false,
+  isBursting: false,
+  burstCount: 0,
   visionResult: null,
   videoSeconds: 0,
   facingMode: 'environment',
   showGallery: false,
   torch: false,
-  hdr: false,
+  hdr: true,
   timer: 0,
   countdown: null,
   aspectRatio: '4:3',
   filter: 'None',
   showGrid: true,
   isSettingsOpen: false,
+  toasts: [],
+  locationEnabled: false,
+  currentCoords: null,
 
-  setMode: (mode) => set({ mode, aspectRatio: mode === CameraMode.SQUARE ? '1:1' : '4:3', visionResult: null }),
-  setZoom: (zoom) => set({ zoom }),
+  setMode: (mode) => set({ mode, aspectRatio: mode === CameraMode.SQUARE ? '1:1' : '4:3', visionResult: null, isSettingsOpen: false }),
+  setZoom: (zoom) => set({ zoom: Math.min(Math.max(zoom, 0.5), 10) }),
   setExposure: (exposure) => set({ exposure }),
   setIsCapturing: (isCapturing) => set({ isCapturing }),
   setIsRecording: (isRecording) => set({ isRecording }),
   setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
+  setIsBursting: (isBursting) => set({ isBursting, burstCount: isBursting ? 0 : 0 }),
+  setBurstCount: (val) => set((state) => ({ burstCount: typeof val === 'function' ? val(state.burstCount) : val })),
   setVisionResult: (visionResult) => set({ visionResult }),
   incrementVideoSeconds: () => set((state) => ({ videoSeconds: state.videoSeconds + 1 })),
   resetVideoSeconds: () => set({ videoSeconds: 0 }),
@@ -102,4 +128,14 @@ export const useCameraStore = create<CameraState>((set) => ({
   setIsSettingsOpen: (isSettingsOpen) => set({ isSettingsOpen }),
   addImage: (img) => set((state) => ({ images: [img, ...state.images] })),
   deleteImage: (id) => set((state) => ({ images: state.images.filter(i => i.id !== id) })),
+  addToast: (message, type = 'success') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    set((state) => ({ toasts: [...state.toasts, { id, message, type }] }));
+    setTimeout(() => {
+      set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+    }, 3000);
+  },
+  removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+  setLocationEnabled: (locationEnabled) => set({ locationEnabled }),
+  setCurrentCoords: (currentCoords) => set({ currentCoords }),
 }));

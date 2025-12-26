@@ -3,6 +3,7 @@
   "description": "A high-performance web-based camera app mimicking the iPhone experience with pinch-to-zoom, tap-to-focus simulation, and instant capture.",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }
