@@ -17,7 +17,8 @@ export enum CameraMode {
   NIGHT = 'NIGHT',
   VISION = 'VISION',
   TIMELAPSE = 'TIMELAPSE',
-  SLOW_MOTION = 'SLOW_MOTION'
+  SLOW_MOTION = 'SLOW_MOTION',
+  PRO = 'PRO'
 }
 
 export type AspectRatio = '4:3' | '16:9' | '1:1';

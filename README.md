@@ -5,12 +5,14 @@ A modern web-based camera app built with React, TypeScript, and Vite.
 ## Features
 
 - Photo and video capture
-- Multiple camera modes (Photo, Video, Slow Motion, Timelapse, Vision AI)
-- Filters and effects
+- Multiple camera modes (Photo, Video, Slow Motion, Timelapse, Vision AI, Pro, Night)
+- Advanced filters and effects
 - Burst mode
 - Location tagging
-- PWA support
-- Gemini AI vision analysis
+- PWA support with offline caching
+- Gemini AI vision analysis with QR code detection and text recognition
+- Pro mode with manual exposure, zoom, shutter speed (1ms-30s), and ISO controls (hardware-dependent)
+- Enhanced night mode with longer exposure simulation
 
 ## Development
 

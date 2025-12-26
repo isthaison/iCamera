@@ -7,6 +7,8 @@ interface Props {
   facingMode: 'user' | 'environment';
   zoom: number;
   exposure: number;
+  shutterSpeed: number;
+  iso: number;
   torch: boolean;
   filter: CameraFilter;
   onZoomChange: (zoom: number) => void;
@@ -14,7 +16,7 @@ interface Props {
 }
 
 const CameraEngine = forwardRef((props: Props, ref) => {
-  const { facingMode, zoom, exposure, torch, aspectRatio, filter } = props;
+  const { facingMode, zoom, exposure, shutterSpeed, iso, torch, aspectRatio, filter } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -142,6 +144,16 @@ const CameraEngine = forwardRef((props: Props, ref) => {
           adv.exposureCompensation = Math.min(Math.max(exposure, caps.exposureCompensation.min), caps.exposureCompensation.max);
         }
         
+        // SHUTTER SPEED (Exposure Time)
+        if (caps.exposureTime) {
+          adv.exposureTime = Math.min(Math.max(shutterSpeed * 1000, caps.exposureTime.min), caps.exposureTime.max);
+        }
+        
+        // ISO (Sensitivity)
+        if (caps.iso) {
+          adv.iso = Math.min(Math.max(iso, caps.iso.min), caps.iso.max);
+        }
+        
         // TORCH
         if (caps.torch !== undefined && facingMode === 'environment') {
           adv.torch = torch;
@@ -157,7 +169,7 @@ const CameraEngine = forwardRef((props: Props, ref) => {
   };
 
   useEffect(() => { startCamera(); }, [facingMode]);
-  useEffect(() => { if (isReady) applyAdvancedConstraints(); }, [zoom, exposure, torch, isReady]);
+  useEffect(() => { if (isReady) applyAdvancedConstraints(); }, [zoom, exposure, shutterSpeed, iso, torch, isReady]);
 
   useImperativeHandle(ref, () => ({
     capture: async () => {

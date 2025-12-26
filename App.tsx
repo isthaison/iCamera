@@ -8,6 +8,7 @@ import ZoomDial from './components/ZoomDial';
 import SettingsTray from './components/SettingsTray';
 import BottomBar from './components/BottomBar';
 import GalleryOverlay from './components/GalleryOverlay';
+import ProControls from './components/ProControls';
 import HorizonLevel from './components/HorizonLevel';
 import ToastContainer from './components/ToastContainer';
 import { useCameraSettingsStore } from './stores/cameraSettingsStore';
@@ -87,7 +88,7 @@ const App: React.FC = () => {
         config: { responseMimeType: "application/json" }
       });
       const resJson = JSON.parse(response.text || "{}");
-      capture.setVisionResult({ raw: Object.values(resJson).filter(v => v && v !== '...').join('\n') || "Không tìm thấy thông tin." });
+      capture.setVisionResult(resJson);
       ui.addToast("Phân tích hoàn tất", "info");
     } catch (error) {
       capture.setVisionResult({ raw: "Lỗi AI." });
@@ -98,6 +99,12 @@ const App: React.FC = () => {
 
   const performCapture = async (silent = false) => {
     if (!silent) capture.setIsCapturing(true);
+    
+    // Special handling for NIGHT mode - longer exposure simulation
+    if (cameraSettings.mode === CameraMode.NIGHT && !silent) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+    }
+    
     const imageUrl = await cameraRef.current?.capture();
     if (imageUrl) {
       const imageObj = {
@@ -112,7 +119,7 @@ const App: React.FC = () => {
 
       if (silent) ui.addToast("Đã lưu ảnh");
     }
-    if (!silent) setTimeout(() => capture.setIsCapturing(false), 150);
+    if (!silent) setTimeout(() => capture.setIsCapturing(false), cameraSettings.mode === CameraMode.NIGHT ? 500 : 150);
   };
 
   const handleBurstStart = () => {
@@ -204,6 +211,8 @@ const App: React.FC = () => {
           facingMode={cameraSettings.facingMode}
           zoom={cameraSettings.zoom}
           exposure={cameraSettings.exposure}
+          shutterSpeed={cameraSettings.shutterSpeed}
+          iso={cameraSettings.iso}
           torch={cameraSettings.torch}
           filter={cameraSettings.filter}
           onZoomChange={cameraSettings.setZoom}
@@ -233,6 +242,7 @@ const App: React.FC = () => {
 
         {cameraSettings.showGrid && <HorizonLevel />}
         <ZoomDial currentZoom={cameraSettings.zoom} setZoom={cameraSettings.setZoom} />
+        {cameraSettings.mode === CameraMode.PRO && <ProControls />}
       </div>
 
       {capture.visionResult && (
@@ -242,7 +252,62 @@ const App: React.FC = () => {
               <span className="text-[10px] font-black tracking-widest uppercase text-yellow-400">Gemini Pro Vision</span>
               <button onClick={() => capture.setVisionResult(null)} className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            <div className="text-[13px] leading-relaxed text-white font-medium whitespace-pre-line">{capture.visionResult.raw}</div>
+            <div className="space-y-3">
+              {capture.visionResult.qr && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">QR Code</span>
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(capture.visionResult!.qr!)}
+                      className="text-[8px] bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full font-bold"
+                    >
+                      Sao chép
+                    </button>
+                  </div>
+                  {capture.visionResult.qr.startsWith('http') ? (
+                    <a 
+                      href={capture.visionResult.qr} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-300 underline break-all"
+                    >
+                      {capture.visionResult.qr}
+                    </a>
+                  ) : (
+                    <span className="text-white break-all">{capture.visionResult.qr}</span>
+                  )}
+                </div>
+              )}
+              {capture.visionResult.text && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-green-400">Văn bản</span>
+                    <button 
+                      onClick={() => navigator.clipboard.writeText(capture.visionResult!.text!)}
+                      className="text-[8px] bg-green-500/20 text-green-300 px-2 py-1 rounded-full font-bold"
+                    >
+                      Sao chép
+                    </button>
+                  </div>
+                  <span className="text-white break-words">{capture.visionResult.text}</span>
+                </div>
+              )}
+              {capture.visionResult.faces && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-purple-400">Khuôn mặt</span>
+                  <span className="text-white">{capture.visionResult.faces}</span>
+                </div>
+              )}
+              {capture.visionResult.objects && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Đối tượng</span>
+                  <span className="text-white">{capture.visionResult.objects}</span>
+                </div>
+              )}
+              {!capture.visionResult.qr && !capture.visionResult.text && !capture.visionResult.faces && !capture.visionResult.objects && (
+                <span className="text-white/60">Không tìm thấy thông tin.</span>
+              )}
+            </div>
           </div>
         </div>
       )}

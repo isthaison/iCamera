@@ -5,10 +5,10 @@ import { CameraMode } from "../types";
 const chunksRef = { current: [] as Blob[] };
 
 interface VisionResult {
-  text?: string;
-  objects?: string[];
-  faces?: string;
   qr?: string;
+  text?: string;
+  faces?: string;
+  objects?: string;
   raw?: string;
 }
 

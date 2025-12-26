@@ -1,11 +1,13 @@
-import { create } from 'zustand';
-import { CameraMode, AspectRatio, CameraFilter } from '../types';
+import { create } from "zustand";
+import { CameraMode, AspectRatio, CameraFilter } from "../types";
 
 interface CameraSettingsState {
   mode: CameraMode;
   zoom: number;
   exposure: number;
-  facingMode: 'user' | 'environment';
+  shutterSpeed: number; // in milliseconds
+  iso: number;
+  facingMode: "user" | "environment";
   torch: boolean;
   hdr: boolean;
   timer: 0 | 3 | 10;
@@ -17,6 +19,8 @@ interface CameraSettingsState {
   setMode: (mode: CameraMode) => void;
   setZoom: (zoom: number) => void;
   setExposure: (exposure: number) => void;
+  setShutterSpeed: (speed: number) => void;
+  setIso: (iso: number) => void;
   toggleFacingMode: () => void;
   setTorch: (val: boolean) => void;
   setHdr: (val: boolean) => void;
@@ -31,24 +35,32 @@ export const useCameraSettingsStore = create<CameraSettingsState>((set) => ({
   mode: CameraMode.PHOTO,
   zoom: 1,
   exposure: 0,
-  facingMode: 'environment',
+  shutterSpeed: 1000, // 1/1000 second
+  iso: 100,
+  facingMode: "environment",
   torch: false,
   hdr: true,
   timer: 0,
   countdown: null,
-  aspectRatio: '4:3',
-  filter: 'None',
+  aspectRatio: "4:3",
+  filter: "None",
   showGrid: true,
 
-  setMode: (mode) => set({ mode, aspectRatio: mode === CameraMode.SQUARE ? '1:1' : '4:3' }),
-  setZoom: (zoom) => set({ zoom: Math.min(Math.max(zoom, 0.5), 10) }),
+  setMode: (mode) =>
+    set({ mode, aspectRatio: mode === CameraMode.SQUARE ? "1:1" : "4:3" }),
+  setZoom: (zoom) => set({ zoom: Math.min(Math.max(zoom, 0.5), 100) }),
   setExposure: (exposure) => set({ exposure }),
-  toggleFacingMode: () => set((state) => ({
-    facingMode: state.facingMode === 'environment' ? 'user' : 'environment',
-    torch: false,
-    zoom: 1,
-    exposure: 0
-  })),
+  setShutterSpeed: (shutterSpeed) => set({ shutterSpeed }),
+  setIso: (iso) => set({ iso }),
+  toggleFacingMode: () =>
+    set((state) => ({
+      facingMode: state.facingMode === "environment" ? "user" : "environment",
+      torch: false,
+      zoom: 1,
+      exposure: 0,
+      shutterSpeed: 1000,
+      iso: 100,
+    })),
   setTorch: (torch) => set({ torch }),
   setHdr: (hdr) => set({ hdr }),
   setTimer: (timer) => set({ timer }),

@@ -11,6 +11,7 @@ const ModeSelector: React.FC<Props> = ({ currentMode, setMode }) => {
   const modes = [
     { label: 'TIME-LAPSE', value: CameraMode.TIMELAPSE },
     { label: 'SLO-MO', value: CameraMode.SLOW_MOTION },
+    { label: 'PRO', value: CameraMode.PRO },
     { label: 'VIDEO', value: CameraMode.VIDEO },
     { label: 'PHOTO', value: CameraMode.PHOTO },
     { label: 'PORTRAIT', value: CameraMode.PORTRAIT },
