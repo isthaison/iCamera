@@ -8,11 +8,21 @@ export interface CapturedImage {
 export enum CameraMode {
   PHOTO = 'PHOTO',
   VIDEO = 'VIDEO',
-  SQUARE = 'SQUARE'
+  SQUARE = 'SQUARE',
+  PORTRAIT = 'PORTRAIT',
+  NIGHT = 'NIGHT'
 }
 
-export interface CameraCapabilities {
-  zoom?: { min: number; max: number; step: number };
-  torch?: boolean;
-  focusMode?: string[];
+export type AspectRatio = '4:3' | '16:9' | '1:1';
+
+export type CameraFilter = 'None' | 'Vivid' | 'Noir' | 'Silvertone' | 'Dramatic';
+
+export interface CameraSettings {
+  flash: boolean;
+  hdr: boolean;
+  grid: boolean;
+  timer: 0 | 3 | 10;
+  aspectRatio: AspectRatio;
+  filter: CameraFilter;
+  proRaw: boolean;
 }

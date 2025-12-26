@@ -1,5 +1,6 @@
 
 import React, { useRef, useEffect, forwardRef, useImperativeHandle, useState } from 'react';
+import { CameraFilter, AspectRatio } from '../types';
 
 interface Props {
   facingMode: 'user' | 'environment';
@@ -7,221 +8,205 @@ interface Props {
   exposure: number;
   torch: boolean;
   onZoomChange: (zoom: number) => void;
-  aspectRatio: '4:3' | '16:9' | '1:1';
+  aspectRatio: AspectRatio;
 }
 
 const CameraEngine = forwardRef((props: Props, ref) => {
-  const { facingMode, zoom, exposure, torch, onZoomChange, aspectRatio } = props;
+  const { facingMode, zoom, exposure, torch, aspectRatio } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useImperativeHandle(ref, () => ({
-    capture: async (hdrEnabled: boolean) => {
-      if (!videoRef.current) return null;
-      
-      const video = videoRef.current;
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      
-      // Calculate crop based on aspect ratio
-      let targetWidth = width;
-      let targetHeight = height;
-      let startX = 0;
-      let startY = 0;
+  /**
+   * Tính toán thông số crop dựa trên Aspect Ratio và kích thước cảm biến thực tế
+   */
+  const getCropDimensions = (v: HTMLVideoElement, ratio: AspectRatio) => {
+    const w = v.videoWidth;
+    const h = v.videoHeight;
+    let targetW = w;
+    let targetH = h;
+    let sX = 0, sY = 0;
 
-      if (aspectRatio === '1:1') {
-        const size = Math.min(width, height);
-        targetWidth = size;
-        targetHeight = size;
-        startX = (width - size) / 2;
-        startY = (height - size) / 2;
-      } else if (aspectRatio === '16:9') {
-        // Landscape 16:9 crop for mobile (usually portrait sensors)
-        // WebRTC height is often the larger dimension on mobile
-        const sensorIsPortrait = height > width;
-        if (sensorIsPortrait) {
-          targetHeight = (width * 16) / 9;
-          if (targetHeight > height) {
-            targetHeight = height;
-            targetWidth = (height * 9) / 16;
-          }
-          startX = (width - targetWidth) / 2;
-          startY = (height - targetHeight) / 2;
-        } else {
-          targetWidth = width;
-          targetHeight = (width * 9) / 16;
-          startX = 0;
-          startY = (height - targetHeight) / 2;
-        }
-      } else { // 4:3
-        const sensorIsPortrait = height > width;
-        if (sensorIsPortrait) {
-          targetHeight = (width * 4) / 3;
-          if (targetHeight > height) {
-            targetHeight = height;
-            targetWidth = (height * 3) / 4;
-          }
-          startX = (width - targetWidth) / 2;
-          startY = (height - targetHeight) / 2;
-        } else {
-          targetWidth = width;
-          targetHeight = (width * 3) / 4;
-          startX = 0;
-          startY = (height - targetHeight) / 2;
-        }
+    if (ratio === '1:1') {
+      const size = Math.min(w, h);
+      targetW = targetH = size;
+      sX = (w - size) / 2; sY = (h - size) / 2;
+    } else if (ratio === '16:9') {
+      // iPhone thường có cảm biến 4:3, chụp 16:9 là crop từ 4:3
+      targetH = (w * 16) / 9;
+      if (targetH > h) {
+        targetH = h;
+        targetW = (h * 9) / 16;
       }
+      sX = (w - targetW) / 2;
+      sY = (h - targetH) / 2;
+    } else { // 4:3
+      targetH = (w * 4) / 3;
+      if (targetH > h) {
+        targetH = h;
+        targetW = (h * 3) / 4;
+      }
+      sX = (w - targetW) / 2;
+      sY = (h - targetH) / 2;
+    }
+
+    return { sX, sY, targetW, targetH };
+  };
+
+  /**
+   * Áp dụng Filter màu sắc vào Canvas Context
+   */
+  const applyFilterToCtx = (ctx: CanvasRenderingContext2D, filter: CameraFilter) => {
+    ctx.filter = ''; // Reset
+    switch (filter) {
+      case 'Vivid': ctx.filter = 'saturate(1.6) contrast(1.1) brightness(1.05)'; break;
+      case 'Noir': ctx.filter = 'grayscale(1) contrast(1.4) brightness(0.9)'; break;
+      case 'Silvertone': ctx.filter = 'grayscale(0.8) sepia(0.2) contrast(1.2) brightness(1.1)'; break;
+      case 'Dramatic': ctx.filter = 'contrast(1.7) saturate(0.7) brightness(0.85)'; break;
+      default: ctx.filter = 'saturate(1.05) contrast(1.02)'; break;
+    }
+  };
+
+  /**
+   * Logic chụp ảnh chuẩn (Standard)
+   */
+  const processStandardCapture = (ctx: CanvasRenderingContext2D, v: HTMLVideoElement, crop: any) => {
+    ctx.drawImage(v, crop.sX, crop.sY, crop.targetW, crop.targetH, 0, 0, crop.targetW, crop.targetH);
+  };
+
+  /**
+   * Logic chụp ảnh HDR (Kết hợp 2 frames)
+   */
+  const processHDRCapture = async (ctx: CanvasRenderingContext2D, v: HTMLVideoElement, crop: any) => {
+    const f1 = await createImageBitmap(v);
+    await new Promise(r => setTimeout(r, 30));
+    const f2 = await createImageBitmap(v);
+    
+    // Vẽ frame 1 làm nền
+    ctx.drawImage(f1, crop.sX, crop.sY, crop.targetW, crop.targetH, 0, 0, crop.targetW, crop.targetH);
+    
+    // Chồng frame 2 với chế độ Soft Light để giữ chi tiết vùng sáng/tối
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(f2, crop.sX, crop.sY, crop.targetW, crop.targetH, 0, 0, crop.targetW, crop.targetH);
+    
+    // Reset state
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+  };
+
+  /**
+   * Logic chụp ảnh Night Mode (Stacking 8 frames)
+   */
+  const processNightCapture = async (ctx: CanvasRenderingContext2D, v: HTMLVideoElement, crop: any) => {
+    const frames = [];
+    for (let i = 0; i < 8; i++) {
+      frames.push(await createImageBitmap(v));
+      await new Promise(r => setTimeout(r, 60)); // Giả lập thời gian phơi sáng
+    }
+
+    ctx.globalAlpha = 1.0;
+    ctx.drawImage(frames[0], crop.sX, crop.sY, crop.targetW, crop.targetH, 0, 0, crop.targetW, crop.targetH);
+    
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.35;
+    for (let i = 1; i < frames.length; i++) {
+      ctx.drawImage(frames[i], crop.sX, crop.sY, crop.targetW, crop.targetH, 0, 0, crop.targetW, crop.targetH);
+    }
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+  };
+
+  useImperativeHandle(ref, () => ({
+    capture: async (hdrEnabled: boolean, nightMode?: boolean, filter: CameraFilter = 'None') => {
+      if (!videoRef.current) return null;
+      const v = videoRef.current;
+      const crop = getCropDimensions(v, aspectRatio);
 
       const canvas = document.createElement('canvas');
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
+      canvas.width = crop.targetW;
+      canvas.height = crop.targetH;
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
 
-      const drawFrame = (v: HTMLVideoElement) => {
-        ctx.drawImage(v, startX, startY, targetWidth, targetHeight, 0, 0, targetWidth, targetHeight);
-      };
+      // Áp dụng filter trước khi vẽ
+      applyFilterToCtx(ctx, filter);
 
-      if (!hdrEnabled) {
-        ctx.filter = 'contrast(1.1) saturate(1.1) brightness(1.02)';
-        drawFrame(video);
+      if (nightMode) {
+        await processNightCapture(ctx, v, crop);
+      } else if (hdrEnabled) {
+        await processHDRCapture(ctx, v, crop);
       } else {
-        const frame1 = await createImageBitmap(video);
-        await new Promise(r => setTimeout(r, 40));
-        const frame2 = await createImageBitmap(video);
-
-        ctx.clearRect(0, 0, targetWidth, targetHeight);
-        ctx.filter = 'brightness(1.0) contrast(1.05)';
-        ctx.drawImage(frame1, startX, startY, targetWidth, targetHeight, 0, 0, targetWidth, targetHeight);
-
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.filter = 'brightness(0.8) contrast(1.4) saturate(1.3) blur(0.5px)';
-        ctx.globalAlpha = 0.6;
-        ctx.drawImage(frame2, startX, startY, targetWidth, targetHeight, 0, 0, targetWidth, targetHeight);
-
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1.0;
-        ctx.filter = 'none';
-
-        const finalPassCanvas = document.createElement('canvas');
-        finalPassCanvas.width = targetWidth;
-        finalPassCanvas.height = targetHeight;
-        const fCtx = finalPassCanvas.getContext('2d');
-        if (fCtx) {
-          fCtx.filter = 'saturate(1.1) contrast(1.05)';
-          fCtx.drawImage(canvas, 0, 0);
-          return finalPassCanvas.toDataURL('image/jpeg', 0.95);
-        }
+        processStandardCapture(ctx, v, crop);
       }
-      
-      return canvas.toDataURL('image/jpeg', 0.92);
+
+      return canvas.toDataURL('image/jpeg', 0.95);
     }
   }));
 
   const startCamera = async () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     try {
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: { ideal: facingMode }, 
+          width: { ideal: 3840 }, 
+          height: { ideal: 2160 },
           frameRate: { ideal: 60 }
         },
         audio: false
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
-        
         const track = stream.getVideoTracks()[0];
-        if (track) {
-          applyCameraConstraints(track, zoom, exposure, torch);
-        }
+        if (track) applyCameraConstraints(track, zoom, exposure, torch);
       }
       setError(null);
-    } catch (err) {
-      console.error("Camera Access Failed", err);
-      setError("Please allow camera permissions");
+    } catch {
+      setError("Camera Access Denied");
     }
   };
 
-  const applyCameraConstraints = async (track: MediaStreamTrack, currentZoom: number, currentExposure: number, currentTorch: boolean) => {
-    if (!track || track.readyState !== 'live') return;
-
+  const applyCameraConstraints = async (track: MediaStreamTrack, z: number, e: number, t: boolean) => {
     try {
-      const capabilities: any = (track as any).getCapabilities?.() || {};
-      const advanced: any = {};
-
-      if (capabilities.zoom) {
-        advanced.zoom = Math.max(capabilities.zoom.min, Math.min(currentZoom, capabilities.zoom.max));
-      }
-
-      if (capabilities.exposureCompensation) {
-        advanced.exposureCompensation = Math.max(capabilities.exposureCompensation.min, Math.min(currentExposure, capabilities.exposureCompensation.max));
-      }
-
-      if (capabilities.torch !== undefined) {
-        advanced.torch = currentTorch;
-      } else if (facingMode === 'environment') {
-        advanced.torch = currentTorch;
-      }
-
-      if (Object.keys(advanced).length > 0) {
-        await track.applyConstraints({ advanced: [advanced] } as any);
-      }
-    } catch (e) {
-      console.warn("Failed to apply track constraints:", e);
+      const caps: any = (track as any).getCapabilities?.() || {};
+      const adv: any = {};
+      if (caps.zoom) adv.zoom = Math.max(caps.zoom.min, Math.min(z, caps.zoom.max));
+      if (caps.exposureCompensation) adv.exposureCompensation = Math.max(caps.exposureCompensation.min, Math.min(e, caps.exposureCompensation.max));
+      if (caps.torch !== undefined || facingMode === 'environment') adv.torch = t;
+      await track.applyConstraints({ advanced: [adv] } as any);
+    } catch (err) {
+      console.warn("Failed to apply constraints", err);
     }
   };
 
   useEffect(() => {
     startCamera();
-    return () => {
-      streamRef.current?.getTracks().forEach(track => track.stop());
-    };
+    return () => streamRef.current?.getTracks().forEach(t => t.stop());
   }, [facingMode]);
 
   useEffect(() => {
-    const track = streamRef.current?.getVideoTracks()[0];
-    if (track) {
-      applyCameraConstraints(track, zoom, exposure, torch);
-    }
+    const t = streamRef.current?.getVideoTracks()[0];
+    if (t) applyCameraConstraints(t, zoom, exposure, torch);
   }, [zoom, exposure, torch]);
 
-  // CSS for aspect ratio preview
-  const getPreviewStyles = (): React.CSSProperties => {
-    if (aspectRatio === '1:1') return { aspectRatio: '1 / 1', width: '100%', maxHeight: '100%' };
-    if (aspectRatio === '16:9') return { aspectRatio: '9 / 16', height: '100%', maxWidth: '100%' };
-    return { aspectRatio: '3 / 4', height: '100%', maxWidth: '100%' };
-  };
+  const style = aspectRatio === '1:1' ? { aspectRatio: '1/1', width: '100%' } : 
+                aspectRatio === '16:9' ? { aspectRatio: '9/16', height: '100%' } : { aspectRatio: '3/4', height: '100%' };
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
+    <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
       {error ? (
-        <div className="text-center p-8 bg-black/50 rounded-xl backdrop-blur-md">
-          <p className="text-red-400 mb-4">{error}</p>
-          <button 
-            onClick={startCamera} 
-            className="px-6 py-2 bg-white text-black font-bold rounded-full"
-          >
+        <div className="bg-white/10 p-6 rounded-2xl backdrop-blur-md text-center max-w-xs">
+          <p className="text-red-400 font-bold mb-4">{error}</p>
+          <button onClick={startCamera} className="bg-white text-black px-6 py-2 rounded-full font-bold active:scale-95 transition-transform">
             Retry
           </button>
         </div>
       ) : (
-        <div style={getPreviewStyles()} className="relative transition-all duration-300">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover transition-opacity duration-500"
-          />
+        <div style={style} className="transition-all duration-500 ease-in-out">
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
         </div>
       )}
     </div>
