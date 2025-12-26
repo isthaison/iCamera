@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, forwardRef, useImperativeHandle, useState, useCallback } from 'react';
 import { CameraFilter, AspectRatio, CameraMode } from '../types';
-import { useCameraStore } from '../store';
+import { useCaptureStore } from '../stores/captureStore';
 
 interface Props {
   facingMode: 'user' | 'environment';
@@ -18,11 +18,11 @@ const CameraEngine = forwardRef((props: Props, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const animationFrameRef = useRef<number>(0);
+
+  const { startVideo: storeStartVideo, stopVideo: storeStopVideo, setRecordingRefs } = useCaptureStore();
 
   const getFilterString = (f: CameraFilter) => {
     switch (f) {
@@ -77,7 +77,7 @@ const CameraEngine = forwardRef((props: Props, ref) => {
     
     // Vẽ frame từ video lên canvas
     ctx.drawImage(v, sX, sY, targetW, targetH, 0, 0, targetW, targetH);
-    
+
     animationFrameRef.current = requestAnimationFrame(renderLoop);
   }, [aspectRatio, isReady, filter]);
 
@@ -167,49 +167,16 @@ const CameraEngine = forwardRef((props: Props, ref) => {
       return c.toDataURL('image/jpeg', 0.95);
     },
     startVideo: (mode: CameraMode) => {
-      if (!canvasRef.current) return;
-      chunksRef.current = [];
-      
-      let fps = 30;
-      if (mode === CameraMode.TIMELAPSE) fps = 10; // Tăng một chút cho mượt
-      if (mode === CameraMode.SLOW_MOTION) fps = 60;
-
-      const stream = canvasRef.current.captureStream(fps);
-      
-      if (streamRef.current && mode !== CameraMode.SLOW_MOTION) {
-        const audioTrack = streamRef.current.getAudioTracks()[0];
-        if (audioTrack) stream.addTrack(audioTrack);
+      const canvas = canvasRef.current;
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        console.warn("Canvas not ready for video recording");
+        return;
       }
-
-      const mimeTypes = [
-        'video/mp4;codecs=avc1',
-        'video/webm;codecs=h264',
-        'video/webm;codecs=vp9',
-        'video/webm'
-      ];
-      
-      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
-      
-      recorderRef.current = new MediaRecorder(stream, { 
-        mimeType: supportedMimeType,
-        videoBitsPerSecond: mode === CameraMode.SLOW_MOTION ? 8000000 : 5000000
-      });
-
-      recorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorderRef.current.start(1000);
+      setRecordingRefs(null, canvas, streamRef.current);
+      storeStartVideo(mode);
     },
-    stopVideo: (): Promise<string> => {
-      return new Promise((resolve) => {
-        if (!recorderRef.current || recorderRef.current.state === 'inactive') return resolve('');
-        recorderRef.current.onstop = () => {
-          const mimeType = recorderRef.current?.mimeType || 'video/webm';
-          const blob = new Blob(chunksRef.current, { type: mimeType });
-          resolve(URL.createObjectURL(blob));
-        };
-        recorderRef.current.stop();
-      });
+    stopVideo: () => {
+      return storeStopVideo();
     }
   }));
 
@@ -226,7 +193,7 @@ const CameraEngine = forwardRef((props: Props, ref) => {
       ) : (
         <div style={previewStyle} className="relative transition-all duration-700 shadow-2xl overflow-hidden bg-white/[0.02]">
           <video ref={videoRef} autoPlay playsInline muted className="hidden" />
-          <canvas ref={canvasRef} className={`w-full h-full object-cover transition-opacity duration-700 ${isReady ? 'opacity-100' : 'opacity-0'}`} />
+          <canvas ref={canvasRef} className="w-full h-full object-cover transition-opacity duration-700 opacity-100" />
         </div>
       )}
     </div>

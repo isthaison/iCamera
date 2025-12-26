@@ -1,20 +1,43 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# iCamera Web
 
-# Run and deploy your AI Studio app
+A modern web-based camera app built with React, TypeScript, and Vite.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1HBCVESqylk9juRF78gkj-4BcrOmCxrIw
+- Photo and video capture
+- Multiple camera modes (Photo, Video, Slow Motion, Timelapse, Vision AI)
+- Filters and effects
+- Burst mode
+- Location tagging
+- PWA support
+- Gemini AI vision analysis
 
-## Run Locally
+## Development
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev
+```
 
+## Build
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm run build
+```
+
+## Deploy to GitHub Pages
+
+The project is configured for automatic deployment to GitHub Pages via GitHub Actions.
+
+1. Push to the `main` branch
+2. Go to Repository Settings > Pages
+3. Select "Deploy from a branch" and choose `gh-pages`
+4. The site will be available at `https://<username>.github.io/iCamera/`
+
+## Environment Variables
+
+Create a `.env` file for API keys:
+
+```
+API_KEY=your_gemini_api_key
+```

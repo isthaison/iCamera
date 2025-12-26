@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CapturedImage } from '../types';
 
 interface Props {
@@ -64,33 +64,41 @@ const GalleryOverlay: React.FC<Props> = ({ images, onClose, onDelete }) => {
       </div>
       
       {/* Grid View */}
-      <div className="grid grid-cols-3 gap-0.5 overflow-y-auto flex-1 pb-32 no-scrollbar">
+      <div className="flex flex-wrap overflow-y-auto flex-1 pb-32 no-scrollbar px-2">
         {images.map(img => {
           const isVideo = img.url.startsWith('blob:');
           return (
             <div 
               key={img.id} 
               onClick={() => setSelectedId(img.id)}
-              className="relative aspect-square bg-white/[0.03] overflow-hidden active:opacity-70 transition-opacity cursor-pointer group"
+              className="w-1/3 p-1"
             >
-              {isVideo ? (
-                <video src={img.url} className="w-full h-full object-cover" />
-              ) : (
-                <img src={img.url} className="w-full h-full object-cover" loading="lazy" />
-              )}
-              
-              {isVideo && (
-                <div className="absolute bottom-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded flex items-center gap-1">
-                   <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                   <span className="text-[8px] font-black text-white">VIDEO</span>
-                </div>
-              )}
+              <div className="relative bg-black/10 overflow-hidden rounded-xl shadow-sm hover:shadow-md active:scale-95 transition-all duration-200 cursor-pointer group">
+                {isVideo ? (
+                  <video src={img.url} className="w-full h-auto object-cover" />
+                ) : (
+                  <img src={img.url} className="w-full h-auto object-cover" loading="lazy" />
+                )}
+                
+                {isVideo && (
+                  <>
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
+                      <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md px-2 py-1 rounded-full">
+                      <span className="text-[10px] font-bold text-white">VIDEO</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
         
         {images.length === 0 && (
-          <div className="col-span-3 flex flex-col items-center justify-center py-40 gap-4 opacity-30">
+          <div className="w-full flex flex-col items-center justify-center py-40 gap-4 opacity-30">
             <div className="w-20 h-20 rounded-full border-2 border-dashed border-white flex items-center justify-center">
               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
             </div>

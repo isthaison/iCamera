@@ -10,12 +10,22 @@ import BottomBar from './components/BottomBar';
 import GalleryOverlay from './components/GalleryOverlay';
 import HorizonLevel from './components/HorizonLevel';
 import ToastContainer from './components/ToastContainer';
-import { useCameraStore } from './store';
+import { useCameraSettingsStore } from './stores/cameraSettingsStore';
+import { useCaptureStore } from './stores/captureStore';
+import { useGalleryStore } from './stores/galleryStore';
+import { useUIStore } from './stores/uiStore';
+import { useLocationStore } from './stores/locationStore';
+import { useAIStore } from './stores/aiStore';
 import { CameraMode } from './types';
 import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
-  const store = useCameraStore();
+  const cameraSettings = useCameraSettingsStore();
+  const capture = useCaptureStore();
+  const gallery = useGalleryStore();
+  const ui = useUIStore();
+  const location = useLocationStore();
+  const ai = useAIStore();
   const cameraRef = useRef<any>(null);
   const videoIntervalRef = useRef<any>(null);
   const burstIntervalRef = useRef<any>(null);
@@ -23,17 +33,17 @@ const App: React.FC = () => {
 
   // Theo dõi vị trí
   useEffect(() => {
-    if (store.locationEnabled && navigator.geolocation) {
+    if (location.locationEnabled && navigator.geolocation) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         (position) => {
-          store.setCurrentCoords({
+          location.setCurrentCoords({
             lat: position.coords.latitude,
             lng: position.coords.longitude
           });
         },
         (error) => {
           console.error("Location error:", error);
-          store.addToast("Không thể lấy vị trí", "error");
+          ui.addToast("Không thể lấy vị trí", "error");
         },
         { enableHighAccuracy: true }
       );
@@ -42,13 +52,13 @@ const App: React.FC = () => {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
-      store.setCurrentCoords(null);
+      location.setCurrentCoords(null);
     }
 
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
     };
-  }, [store.locationEnabled]);
+  }, [location.locationEnabled]);
 
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
@@ -57,12 +67,16 @@ const App: React.FC = () => {
   };
 
   const performVisionAnalysis = async (base64Image: string) => {
-    store.setIsAnalyzing(true);
-    store.setVisionResult(null);
+    capture.setIsAnalyzing(true);
+    capture.setVisionResult(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      if (!ai.geminiApiKey) {
+        capture.setVisionResult({ raw: "Vui lòng nhập API key Gemini trong cài đặt." });
+        return;
+      }
+      const genAI = new GoogleGenAI({ apiKey: ai.geminiApiKey });
       const pureBase64 = base64Image.split(',')[1];
-      const response = await ai.models.generateContent({
+      const response = await genAI.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: {
           parts: [
@@ -73,109 +87,111 @@ const App: React.FC = () => {
         config: { responseMimeType: "application/json" }
       });
       const resJson = JSON.parse(response.text || "{}");
-      store.setVisionResult({ raw: Object.values(resJson).filter(v => v && v !== '...').join('\n') || "Không tìm thấy thông tin." });
-      store.addToast("Phân tích hoàn tất", "info");
+      capture.setVisionResult({ raw: Object.values(resJson).filter(v => v && v !== '...').join('\n') || "Không tìm thấy thông tin." });
+      ui.addToast("Phân tích hoàn tất", "info");
     } catch (error) {
-      store.setVisionResult({ raw: "Lỗi AI." });
+      capture.setVisionResult({ raw: "Lỗi AI." });
     } finally {
-      store.setIsAnalyzing(false);
+      capture.setIsAnalyzing(false);
     }
   };
 
   const performCapture = async (silent = false) => {
-    if (!silent) store.setIsCapturing(true);
+    if (!silent) capture.setIsCapturing(true);
     const imageUrl = await cameraRef.current?.capture();
     if (imageUrl) {
-      const imageObj = { 
-        id: Date.now().toString(), 
-        url: imageUrl, 
+      const imageObj = {
+        id: Date.now().toString(),
+        url: imageUrl,
         timestamp: Date.now(),
-        location: store.locationEnabled && store.currentCoords ? { ...store.currentCoords } : undefined
+        location: location.locationEnabled && location.currentCoords ? { ...location.currentCoords } : undefined
       };
 
-      if (store.mode === CameraMode.VISION) performVisionAnalysis(imageUrl);
-      else store.addImage(imageObj);
-      
-      if (silent) store.addToast("Đã lưu ảnh");
+      if (cameraSettings.mode === CameraMode.VISION) performVisionAnalysis(imageUrl);
+      else gallery.addImage(imageObj);
+
+      if (silent) ui.addToast("Đã lưu ảnh");
     }
-    if (!silent) setTimeout(() => store.setIsCapturing(false), 150);
+    if (!silent) setTimeout(() => capture.setIsCapturing(false), 150);
   };
 
   const handleBurstStart = () => {
-    if (store.mode !== CameraMode.PHOTO || store.isCapturing) return;
-    store.setIsBursting(true);
+    if (cameraSettings.mode !== CameraMode.PHOTO || capture.isCapturing) return;
+    capture.setIsBursting(true);
     burstIntervalRef.current = setInterval(() => {
       performCapture(true);
-      store.setBurstCount(prev => prev + 1);
+      capture.setBurstCount(prev => prev + 1);
     }, 150);
   };
 
   const handleBurstEnd = () => {
-    if (store.isBursting) {
+    if (capture.isBursting) {
       clearInterval(burstIntervalRef.current);
-      store.setIsBursting(false);
-      store.addToast(`Đã lưu ${store.burstCount} ảnh burst`);
+      capture.setIsBursting(false);
+      ui.addToast(`Đã lưu ${capture.burstCount} ảnh burst`);
     }
   };
 
   const handleCaptureClick = useCallback(async () => {
-    if (store.isCapturing || store.countdown !== null || store.isAnalyzing) return;
+    if (capture.isCapturing || cameraSettings.countdown !== null || capture.isAnalyzing) return;
 
-    const isVideoMode = [CameraMode.VIDEO, CameraMode.SLOW_MOTION, CameraMode.TIMELAPSE].includes(store.mode);
+    const isVideoMode = [CameraMode.VIDEO, CameraMode.SLOW_MOTION, CameraMode.TIMELAPSE].includes(cameraSettings.mode);
 
     if (isVideoMode) {
-      if (store.isRecording) {
-        store.setIsRecording(false);
+      if (capture.isRecording) {
+        capture.setIsRecording(false);
         clearInterval(videoIntervalRef.current);
         const videoUrl = await cameraRef.current?.stopVideo();
         if (videoUrl) {
-          store.addImage({ 
-            id: Date.now().toString(), 
-            url: videoUrl, 
+          gallery.addImage({
+            id: Date.now().toString(),
+            url: videoUrl,
             timestamp: Date.now(),
-            location: store.locationEnabled && store.currentCoords ? { ...store.currentCoords } : undefined
+            location: location.locationEnabled && location.currentCoords ? { ...location.currentCoords } : undefined
           });
-          store.addToast("Video đã được lưu");
+          ui.addToast("Video đã được lưu");
+        } else {
+          ui.addToast("Không thể lưu video", "error");
         }
-        store.resetVideoSeconds();
+        capture.resetVideoSeconds();
       } else {
-        store.setIsRecording(true);
-        cameraRef.current?.startVideo(store.mode);
-        videoIntervalRef.current = setInterval(() => store.incrementVideoSeconds(), 1000);
+        capture.setIsRecording(true);
+        cameraRef.current?.startVideo(cameraSettings.mode);
+        videoIntervalRef.current = setInterval(() => capture.incrementVideoSeconds(), 1000);
       }
       return;
     }
 
-    if (store.timer > 0) {
-      store.setCountdown(store.timer);
+    if (cameraSettings.timer > 0) {
+      cameraSettings.setCountdown(cameraSettings.timer);
       const interval = setInterval(() => {
-        const currentCountdown = useCameraStore.getState().countdown;
+        const currentCountdown = cameraSettings.countdown;
         if (currentCountdown === 1) {
           clearInterval(interval);
           performCapture();
-          store.setCountdown(null);
-        } else if (currentCountdown !== null) store.setCountdown(currentCountdown - 1);
+          cameraSettings.setCountdown(null);
+        } else if (currentCountdown !== null) cameraSettings.setCountdown(currentCountdown - 1);
       }, 1000);
     } else {
       performCapture();
     }
-  }, [store.isCapturing, store.isRecording, store.mode, store.timer, store.countdown, store.hdr, store.filter, store.isAnalyzing, store.locationEnabled, store.currentCoords]);
+  }, [capture.isCapturing, capture.isRecording, cameraSettings.mode, cameraSettings.timer, cameraSettings.countdown, cameraSettings.hdr, cameraSettings.filter, capture.isAnalyzing, location.locationEnabled, location.currentCoords]);
 
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden select-none touch-none">
       <TopBar />
       <ToastContainer />
 
-      {store.isRecording && (
-        <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-1.5 rounded-full flex items-center gap-2 animate-pulse shadow-lg border border-white/20 backdrop-blur-md ${store.mode === CameraMode.TIMELAPSE ? 'bg-orange-500/80' : 'bg-red-600/80'}`}>
+      {capture.isRecording && (
+        <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-4 py-1.5 rounded-full flex items-center gap-2 animate-pulse shadow-lg border border-white/20 backdrop-blur-md ${cameraSettings.mode === CameraMode.TIMELAPSE ? 'bg-orange-500/80' : 'bg-red-600/80'}`}>
           <div className="w-2.5 h-2.5 bg-white rounded-full animate-ping" />
-          <span className="text-xs font-mono font-bold tracking-widest">{formatTime(store.videoSeconds)}</span>
+          <span className="text-xs font-mono font-bold tracking-widest">{formatTime(capture.videoSeconds)}</span>
         </div>
       )}
 
-      {store.isBursting && (
+      {capture.isBursting && (
         <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[60] bg-white/10 backdrop-blur-md px-6 py-2 rounded-full border border-white/20 scale-110">
-          <span className="text-lg font-black font-mono tracking-tighter text-yellow-400">{store.burstCount}</span>
+          <span className="text-lg font-black font-mono tracking-tighter text-yellow-400">{capture.burstCount}</span>
           <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-white/60">Burst</span>
         </div>
       )}
@@ -183,75 +199,75 @@ const App: React.FC = () => {
       <SettingsTray />
 
       <div className="relative flex-1 flex items-center justify-center bg-black overflow-hidden mt-14">
-        <CameraEngine 
+        <CameraEngine
           ref={cameraRef}
-          facingMode={store.facingMode} 
-          zoom={store.zoom} 
-          exposure={store.exposure}
-          torch={store.torch}
-          filter={store.filter}
-          onZoomChange={store.setZoom}
-          aspectRatio={store.aspectRatio}
+          facingMode={cameraSettings.facingMode}
+          zoom={cameraSettings.zoom}
+          exposure={cameraSettings.exposure}
+          torch={cameraSettings.torch}
+          filter={cameraSettings.filter}
+          onZoomChange={cameraSettings.setZoom}
+          aspectRatio={cameraSettings.aspectRatio}
         />
 
         <div className="absolute top-4 right-4 z-40 bg-black/40 backdrop-blur-md p-2 rounded-lg border border-white/5 text-[8px] font-mono text-white/40 pointer-events-none">
-          {store.mode === CameraMode.SLOW_MOTION ? '120 FPS' : store.mode === CameraMode.TIMELAPSE ? '5 FPS' : '30 FPS'}<br/>
-          {store.aspectRatio} | {store.filter !== 'None' ? store.filter.toUpperCase() : 'NO FILTER'}
-          {store.locationEnabled && store.currentCoords && <div className="text-yellow-400 mt-1 uppercase">📍 GPS Active</div>}
+          {cameraSettings.mode === CameraMode.SLOW_MOTION ? '120 FPS' : cameraSettings.mode === CameraMode.TIMELAPSE ? '5 FPS' : '30 FPS'}<br/>
+          {cameraSettings.aspectRatio} | {cameraSettings.filter !== 'None' ? cameraSettings.filter.toUpperCase() : 'NO FILTER'}
+          {location.locationEnabled && location.currentCoords && <div className="text-yellow-400 mt-1 uppercase">📍 GPS Active</div>}
         </div>
-        
-        {store.isCapturing && store.mode === CameraMode.NIGHT && (
+
+        {capture.isCapturing && cameraSettings.mode === CameraMode.NIGHT && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
             <div className="w-16 h-16 border-4 border-white/10 border-t-yellow-400 rounded-full animate-spin mb-6" />
             <span className="text-[10px] font-black tracking-[0.3em] uppercase text-yellow-400">Giữ yên máy...</span>
           </div>
         )}
 
-        <Overlay 
-          isCapturing={store.isCapturing} 
-          mode={store.mode} 
-          showGrid={store.showGrid}
-          exposure={store.exposure}
-          onExposureChange={store.setExposure}
+        <Overlay
+          isCapturing={capture.isCapturing}
+          mode={cameraSettings.mode}
+          showGrid={cameraSettings.showGrid}
+          exposure={cameraSettings.exposure}
+          onExposureChange={cameraSettings.setExposure}
         />
 
-        {store.showGrid && <HorizonLevel />}
-        <ZoomDial currentZoom={store.zoom} setZoom={store.setZoom} />
+        {cameraSettings.showGrid && <HorizonLevel />}
+        <ZoomDial currentZoom={cameraSettings.zoom} setZoom={cameraSettings.setZoom} />
       </div>
 
-      {store.visionResult && (
+      {capture.visionResult && (
         <div className="absolute bottom-72 left-4 right-4 z-[80] animate-in slide-in-from-bottom-10 duration-500">
           <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
             <div className="flex justify-between items-center mb-4">
               <span className="text-[10px] font-black tracking-widest uppercase text-yellow-400">Gemini Pro Vision</span>
-              <button onClick={() => store.setVisionResult(null)} className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              <button onClick={() => capture.setVisionResult(null)} className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
-            <div className="text-[13px] leading-relaxed text-white font-medium whitespace-pre-line">{store.visionResult.raw}</div>
+            <div className="text-[13px] leading-relaxed text-white font-medium whitespace-pre-line">{capture.visionResult.raw}</div>
           </div>
         </div>
       )}
 
-      <div className={`h-72 bg-black flex flex-col justify-end pb-12 z-50 transition-opacity duration-300 ${store.isRecording ? 'opacity-80' : 'opacity-100'}`}>
-        <ModeSelector currentMode={store.mode} setMode={store.setMode} />
-        <BottomBar 
-          mode={store.mode}
-          isCapturing={store.isCapturing || store.isAnalyzing || store.isBursting}
-          isRecording={store.isRecording}
-          lastImage={store.images[0]}
-          onGalleryClick={() => store.setShowGallery(true)}
+      <div className={`h-72 bg-black flex flex-col justify-end pb-12 z-50 transition-opacity duration-300 ${capture.isRecording ? 'opacity-80' : 'opacity-100'}`}>
+        <ModeSelector currentMode={cameraSettings.mode} setMode={cameraSettings.setMode} />
+        <BottomBar
+          mode={cameraSettings.mode}
+          isCapturing={capture.isCapturing || capture.isAnalyzing || capture.isBursting}
+          isRecording={capture.isRecording}
+          lastImage={gallery.images[0]}
+          onGalleryClick={() => gallery.setShowGallery(true)}
           onShutterClick={handleCaptureClick}
           onBurstStart={handleBurstStart}
           onBurstEnd={handleBurstEnd}
-          onFlipClick={store.toggleFacingMode}
+          onFlipClick={cameraSettings.toggleFacingMode}
           onVideoSnap={() => performCapture(true)}
         />
       </div>
 
-      {store.showGallery && (
-        <GalleryOverlay 
-          images={store.images} 
-          onClose={() => store.setShowGallery(false)} 
-          onDelete={store.deleteImage} 
+      {gallery.showGallery && (
+        <GalleryOverlay
+          images={gallery.images}
+          onClose={() => gallery.setShowGallery(false)}
+          onDelete={gallery.deleteImage}
         />
       )}
     </div>

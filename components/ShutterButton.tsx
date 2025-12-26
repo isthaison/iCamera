@@ -38,10 +38,9 @@ const ShutterButton: React.FC<Props> = ({ mode, isCapturing, onClick, onBurstSta
 
   return (
     <div className="relative group">
-      <button 
+      <button
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
         className="relative w-20 h-20 rounded-full border-[4px] border-white flex items-center justify-center transition-all active:scale-95 touch-none"
       >
         <div 

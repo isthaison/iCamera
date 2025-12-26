@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { useCameraStore } from '../store';
+import { useUIStore } from '../stores/uiStore';
 
 const ToastContainer: React.FC = () => {
-  const toasts = useCameraStore(state => state.toasts);
+  const toasts = useUIStore(state => state.toasts);
 
   return (
     <div className="fixed top-2 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">

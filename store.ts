@@ -1,5 +1,5 @@
 
-import { create } from 'https://esm.sh/zustand';
+import { create } from 'zustand';
 import { CameraMode, AspectRatio, CameraFilter, CapturedImage } from './types';
 
 interface VisionResult {
@@ -44,6 +44,9 @@ interface CameraState {
   locationEnabled: boolean;
   currentCoords: { lat: number; lng: number } | null;
 
+  // Gemini AI features
+  geminiApiKey: string;
+
   // Actions
   setMode: (mode: CameraMode) => void;
   setZoom: (zoom: number) => void;
@@ -72,6 +75,7 @@ interface CameraState {
   removeToast: (id: string) => void;
   setLocationEnabled: (val: boolean) => void;
   setCurrentCoords: (coords: { lat: number; lng: number } | null) => void;
+  setGeminiApiKey: (key: string) => void;
 }
 
 export const useCameraStore = create<CameraState>((set) => ({
@@ -99,6 +103,7 @@ export const useCameraStore = create<CameraState>((set) => ({
   toasts: [],
   locationEnabled: false,
   currentCoords: null,
+  geminiApiKey: '',
 
   setMode: (mode) => set({ mode, aspectRatio: mode === CameraMode.SQUARE ? '1:1' : '4:3', visionResult: null, isSettingsOpen: false }),
   setZoom: (zoom) => set({ zoom: Math.min(Math.max(zoom, 0.5), 10) }),
@@ -138,4 +143,5 @@ export const useCameraStore = create<CameraState>((set) => ({
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
   setLocationEnabled: (locationEnabled) => set({ locationEnabled }),
   setCurrentCoords: (currentCoords) => set({ currentCoords }),
+  setGeminiApiKey: (geminiApiKey) => set({ geminiApiKey }),
 }));
