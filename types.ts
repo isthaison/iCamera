@@ -10,7 +10,8 @@ export enum CameraMode {
   VIDEO = 'VIDEO',
   SQUARE = 'SQUARE',
   PORTRAIT = 'PORTRAIT',
-  NIGHT = 'NIGHT'
+  NIGHT = 'NIGHT',
+  VISION = 'VISION'
 }
 
 export type AspectRatio = '4:3' | '16:9' | '1:1';
